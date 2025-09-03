@@ -68,10 +68,10 @@ Once installed, you can use the `zeek-analyzer` command:
 
 ### Basic Usage:
 ```bash
-# Analyze a PCAP file
-zeek-analyzer sample.pcap
+# Analyze a PCAP files in current directory
+zeek-analyzer
 
-# The tool will create analysis files in the same directory as your PCAP
+# The tool will create a subdirectory for every pcap file, move the pcap file to the subdiretcory, and generate analysis files in the same directory as your PCAP
 ```
 
 ### Advanced Usage with Zeek Arguments:
