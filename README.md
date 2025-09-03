@@ -8,16 +8,16 @@ This setup script automatically installs and configures a Python-based wrapper f
 
 ```bash
 # Option 1: Direct download and execute
-curl -sSL https://raw.githubusercontent.com/markovica/zeek-helper-script/main/setup.sh | bash
+curl -sSL https://raw.githubusercontent.com/markovica/zeek-helper-script/refs/heads/main/installer.sh | bash
 
 # Option 2: Download first, then execute
-wget https://raw.githubusercontent.com/markovica/zeek-helper-script/main/setup.sh
+wget https://raw.githubusercontent.com/markovica/zeek-helper-script/refs/heads/main/installer.sh
 chmod +x setup.sh
 ./setup.sh
 
 # Option 3: Clone the repository
-git clone https://github.com/markovica/zeek-helper-script/YOUR_REPO.git
-cd YOUR_REPO
+git clone https://github.com/markovica/zeek-helper-script.git
+cd zeek-helper-script
 ./setup.sh
 ```
 
