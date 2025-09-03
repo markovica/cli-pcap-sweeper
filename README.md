@@ -74,7 +74,7 @@ zeek-analyzer
 # The tool will create a subdirectory for every pcap file, move the pcap file to the subdiretcory, and generate analysis files in the same directory as your PCAP
 ```
 
-### Advanced Usage with Zeek Arguments:
+### Advanced Usage with Zeek Arguments (not implemented yet):
 ```bash
 # Get Zeek help
 zeek-analyzer sample.pcap -- --help
