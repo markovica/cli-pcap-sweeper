@@ -240,15 +240,15 @@ Users can install your tool in three ways:
 
 ```bash
 # Method 1: Direct install
-curl -sSL https://raw.githubusercontent.com/USERNAME/REPO/main/setup.sh | bash
+curl -sSL https://raw.githubusercontent.com/markovica/zeek-helper-script/refs/heads/main/installer.sh | bash
 
 # Method 2: Download first
-wget https://raw.githubusercontent.com/USERNAME/REPO/main/setup.sh
+wget https://raw.githubusercontent.com/markovica/zeek-helper-script/refs/heads/main/installer.sh
 chmod +x setup.sh
 ./setup.sh
 
 # Method 3: Clone and install
-git clone https://github.com/USERNAME/REPO.git
+git clone https://github.com/markovica/zeek-helper-script.git
 cd REPO
 ./setup.sh
 ```
