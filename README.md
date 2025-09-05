@@ -92,4 +92,3 @@ TODO - bellow is the list of files and modification performed by the installer, 
 * Bash shell wrapper file is deployed in ~/.local/bin/pcap-analyzer
 * Python script ~/.local/share/pcap-analyzer/pcap-analyzer.py
 * Python virtual environment ~/.local/share/pcap-analyzer/venv
-* export PATH="$PATH:/root/.local/bin"
