@@ -1,6 +1,23 @@
 # Cli pcap Sweeper Setup
 
 This setup script automatically installs and configures a Python-based CLI script that analyses pcaps. It runs Zeek network analysis in Docker containers.
+* install OS package dependencies
+* create python virtual env
+* install python libraries
+* prefetch zeek docker container
+* deploy the python script
+* deploy the shell wrapper scripts that activates python venv and runs the script
+
+# PCAP Sweeper runs the following analyses
+
+* Detects queries with high latency.
+* Detects high rates of SERVFAIL and NXDOMAIN errors.
+* Identifies queries that do not have a corresponding response.
+* Checks for inconsistencies in TTLs for the same domain. (**WARNING: this one has bad logic, outputs bogus results**)
+
+**WARNING: Not properly tested, do not use the produced data as source of truth**
+
+
 
 ## Quick Start
 
