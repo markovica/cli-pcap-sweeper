@@ -85,3 +85,11 @@ sudo systemctl start docker
 sudo systemctl enable docker
 sudo usermod -aG docker $USER
 ```
+
+# Uninstall / reove the script
+
+TODO - bellow is the list of files and modification performed by the installer, so remove manually for now
+* Bash shell wrapper file is deployed in ~/.local/bin/pcap-analyzer
+* Python script ~/.local/share/pcap-analyzer/pcap-analyzer.py
+* Python virtual environment ~/.local/share/pcap-analyzer/venv
+* export PATH="$PATH:/root/.local/bin:/usr/local/zeek/bin"
