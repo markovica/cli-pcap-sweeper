@@ -50,6 +50,13 @@ source ~/.zshrc
 # Or simply restart your terminal
 ```
 
+### 3. Run PCAP Sweeper
+
+Run the following command in the directory where you have stored pcaps for porcessing/analysis:
+```bash
+pcap-analyzer
+```
+
 ## Requirements
 
 The setup script will automatically check for these requirements:
