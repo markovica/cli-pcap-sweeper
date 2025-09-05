@@ -6,8 +6,8 @@
 set -e  # Exit on any error
 
 # Configuration
-SCRIPT_NAME="zeek-analyzer"
-PYTHON_SCRIPT_NAME="zeek_runner.py"
+SCRIPT_NAME="pcap-sweeper"
+PYTHON_SCRIPT_NAME="pcap_sweeper.py"
 DOCKER_IMAGE="zeek/zeek:latest"
 INSTALL_DIR="$HOME/.local/bin"
 SCRIPT_DIR="$HOME/.local/share/$SCRIPT_NAME"
@@ -772,20 +772,15 @@ main() {
     echo "======================================"
     echo ""
     echo "Usage:"
-    echo "  $SCRIPT_NAME <pcap_file>                    # Basic analysis"
-    echo "  $SCRIPT_NAME <pcap_file> -- <zeek_args>     # With additional Zeek arguments"
-    echo ""
-    echo "Examples:"
-    echo "  $SCRIPT_NAME sample.pcap"
-    echo "  $SCRIPT_NAME sample.pcap -- --help"
-    echo "  $SCRIPT_NAME sample.pcap -- -v -C"
+    echo "  $SCRIPT_NAME                                # Basic analysis"
+    echo "  This will process all pcaps in the current directory"
     echo ""
     echo "Note: If the command is not found, restart your shell or run:"
     echo "  source ~/.bashrc  (for bash)"
     echo "  source ~/.zshrc   (for zsh)"
     echo ""
     echo "Or run directly with:"
-    echo "  $INSTALL_DIR/$SCRIPT_NAME <pcap_file>"
+    echo "  $INSTALL_DIR/$SCRIPT_NAME"
 }
 
 # Run main function
