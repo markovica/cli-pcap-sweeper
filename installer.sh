@@ -128,6 +128,7 @@ import subprocess
 import logging
 from pathlib import Path
 from typing import List, Tuple
+import pandas as pd
 
 # Configure logging
 logging.basicConfig(
@@ -139,6 +140,10 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Set options to display all rows and columns
+#pd.set_option('display.max_rows', None)
+#pd.set_option('display.max_columns', None)
 
 
 class PcapProcessor:
@@ -152,7 +157,8 @@ class PcapProcessor:
         self.source_directory = Path(source_directory)
         self.pcap_files = []
         self.pcap_directories = []
-        
+        self.dns_payload = pd.DataFrame()
+
     def scan_directory_for_pcaps(self) -> List[str]:
         """
         Scan directory for pcap files and create a list
@@ -234,7 +240,7 @@ class PcapProcessor:
                 'zeek', '-r', f'/data/{Path(pcap_file_path).name}',
                 '-C'  # Run in foreground
             ]
-            logger.info(f"Docker-cmd: {docker_cmd}")
+            
             # Change to the target directory for output
             result = subprocess.run(
                 docker_cmd,
@@ -261,21 +267,78 @@ class PcapProcessor:
     
     def analyze_pcap_directory(self, directory_path: str) -> dict:
         """
-        Dummy analysis function for pcap directory
-        This will be developed in later stages
+        Analysis function for pcap directory with DNS analysis
         
         Args:
             directory_path (str): Directory containing pcap and zeek logs
             
         Returns:
-            dict: Analysis results (dummy for now)
+            dict: Analysis results including DNS statistics
         """
         logger.info(f"Running analysis on directory: {directory_path}")
         
-        # Placeholder analysis logic
         directory = Path(directory_path)
+        dns_log_path = directory / 'dns.log'
         
-        # Count files in directory
+        dns_stats = {
+            'total_queries': 0,
+            'unique_domains': set(),
+            'query_types': {},
+            'response_codes': {},
+            'suspicious_domains': []
+        }
+        
+        # Analyze DNS log if it exists
+        if dns_log_path.exists():
+            logger.info(f"Analyzing DNS log: {dns_log_path}")
+            try:
+                df_header = ['ts', 'uid', 'id.orig_h', 'id.orig_p', 'id.resp_h', 'id.resp_p', 'proto', 'trans_id', 'rtt', 'query', 'qclass', 'qclass_name', 'qtype', 'qtype_name', 'rcode', 'rcode_name', 'AA', 'TC', 'RD', 'RA', 'Z', 'answers', 'TTLs', 'rejected']
+                df = pd.read_csv(
+                    dns_log_path,
+                    sep='\t',
+                    comment='#',
+                    header=None,
+                    engine='python'
+                )
+
+                df.columns = df_header
+                self.dns_payload = df
+                #print(type(df))
+                with open(dns_log_path, 'r') as f:
+                    for line in f:
+                        if line.startswith('#') or not line.strip():
+                            continue
+                        
+                        parts = line.strip().split('\t')
+                        if len(parts) >= 9:
+                            dns_stats['total_queries'] += 1
+                            
+                            # Extract domain (query field)
+                            domain = parts[9] if len(parts) > 9 else ''
+                            
+                            if domain:
+                                dns_stats['unique_domains'].add(domain)
+                                
+                                # Check for suspicious patterns
+                                if any(pattern in domain.lower() for pattern in 
+                                      ['malware', 'phish', 'bot', 'dga', 'suspicious']):
+                                    dns_stats['suspicious_domains'].append(domain)
+                            
+                            # Query type
+                            qtype = parts[13] if len(parts) > 13 else 'unknown'
+                            dns_stats['query_types'][qtype] = dns_stats['query_types'].get(qtype, 0) + 1
+                            
+                            # Response code
+                            rcode = parts[15] if len(parts) > 15 else 'unknown'
+                            dns_stats['response_codes'][rcode] = dns_stats['response_codes'].get(rcode, 0) + 1
+                            
+            except Exception as e:
+                logger.error(f"Error analyzing DNS log {dns_log_path}: {e}")
+        
+        # Convert set to count for serialization
+        dns_stats['unique_domains_count'] = len(dns_stats['unique_domains'])
+        dns_stats['unique_domains'] = list(dns_stats['unique_domains'])[:50]  # Limit for report
+        
         files = list(directory.glob('*'))
         log_files = list(directory.glob('*.log'))
         
@@ -283,50 +346,81 @@ class PcapProcessor:
             'directory': directory_path,
             'total_files': len(files),
             'log_files': len(log_files),
+            'dns_analysis': dns_stats,
             'analysis_status': 'completed',
-            'timestamp': Path(directory_path).stat().st_mtime if directory.exists() else None
+            'timestamp': directory.stat().st_mtime if directory.exists() else None
         }
         
-        logger.info(f"Analysis completed for {directory_path}: {analysis_results}")
+        logger.info(f"DNS Analysis - Queries: {dns_stats['total_queries']}, Domains: {dns_stats['unique_domains_count']}")
+        #print(type(df))
         return analysis_results
     
     def generate_report(self, all_analysis_results: List[dict]) -> dict:
         """
-        Dummy report generation function
-        This will be developed in later stages
+        Generate comprehensive report with DNS analysis
         
         Args:
             all_analysis_results (List[dict]): Results from all analyses
             
         Returns:
-            dict: Generated report (dummy for now)
+            dict: Generated report with DNS statistics
         """
         logger.info("Generating final report")
         
         total_directories = len(all_analysis_results)
         successful_analyses = len([r for r in all_analysis_results if r.get('analysis_status') == 'completed'])
         
+        # Aggregate DNS statistics
+        total_dns_queries = sum(r.get('dns_analysis', {}).get('total_queries', 0) for r in all_analysis_results)
+        all_domains = set()
+        all_suspicious = []
+        query_types_agg = {}
+        response_codes_agg = {}
+        
+        for result in all_analysis_results:
+            dns_data = result.get('dns_analysis', {})
+            all_domains.update(dns_data.get('unique_domains', []))
+            all_suspicious.extend(dns_data.get('suspicious_domains', []))
+            
+            for qtype, count in dns_data.get('query_types', {}).items():
+                query_types_agg[qtype] = query_types_agg.get(qtype, 0) + count
+            
+            for rcode, count in dns_data.get('response_codes', {}).items():
+                response_codes_agg[rcode] = response_codes_agg.get(rcode, 0) + count
+        
         report = {
             'total_pcap_files_processed': total_directories,
             'successful_analyses': successful_analyses,
             'failed_analyses': total_directories - successful_analyses,
+            'dns_summary': {
+                'total_queries': total_dns_queries,
+                'unique_domains': len(all_domains),
+                'suspicious_domains': len(set(all_suspicious)),
+                'top_query_types': dict(sorted(query_types_agg.items(), key=lambda x: x[1], reverse=True)[:5]),
+                'response_codes': response_codes_agg
+            },
             'report_timestamp': Path.cwd().stat().st_mtime,
             'detailed_results': all_analysis_results
         }
         
-        # Save report to file
-        report_file = self.source_directory / 'processing_report.txt'
+        # Save enhanced report
+        report_file = self.source_directory / 'dns_analysis_report.txt'
         with open(report_file, 'w') as f:
-            f.write("PCAP Processing Report\n")
+            f.write("PCAP DNS Analysis Report\n")
             f.write("=" * 50 + "\n")
             f.write(f"Total PCAP files processed: {report['total_pcap_files_processed']}\n")
             f.write(f"Successful analyses: {report['successful_analyses']}\n")
-            f.write(f"Failed analyses: {report['failed_analyses']}\n")
-            f.write("\nDetailed Results:\n")
-            for result in all_analysis_results:
-                f.write(f"- {result['directory']}: {result['analysis_status']}\n")
+            f.write(f"DNS queries analyzed: {total_dns_queries}\n")
+            f.write(f"Unique domains: {len(all_domains)}\n")
+            f.write(f"Suspicious domains: {len(set(all_suspicious))}\n")
+            f.write("\nTop Query Types:\n")
+            for qtype, count in report['dns_summary']['top_query_types'].items():
+                f.write(f"  {qtype}: {count}\n")
+            f.write("\nSuspicious Domains Found:\n")
+            for domain in set(all_suspicious):
+                f.write(f"  - {domain}\n")
         
-        logger.info(f"Report saved to: {report_file}")
+        logger.info(f"Enhanced DNS report saved to: {report_file}")
         return report
     
     def process_all(self) -> dict:
@@ -372,14 +466,143 @@ class PcapProcessor:
             logger.error(f"Error in processing workflow: {e}")
             return {'status': 'error', 'message': str(e)}
 
+    def analyze_latency(df, threshold_ms=3000):
+        """Detects queries with high latency."""
+        #print("--- 1. Latency Analysis ---")
+        #print(type(df))
+        
+        # Safely convert the 'rtt' column to a numeric type
+        # Non-numeric values will be replaced with NaN
+        df['rtt'] = pd.to_numeric(df['rtt'], errors='coerce')
+
+        latency_df = df[df['rtt'] > (threshold_ms / 1000)]
+        if not latency_df.empty:
+            latency_df.to_csv('latency.csv')
+            #logger.info(f"Found {len(latency_df)} queries with latency > {threshold_ms}ms:")
+            #logger.info(latency_df[['ts', 'id.orig_h', 'query', 'rtt', 'rcode_name']])
+        else:
+            logger.info("No high-latency queries found.")
+        logger.info("\n")
+
+
+
+
+
+
+
+
+
+
+
+
+def analyze_latency(df, threshold_ms=200):
+    """Detects queries with high latency."""
+    logger.info("--- 1. Latency Analysis ---")
+    #print(type(df))
+    
+    # Safely convert the 'rtt' column to a numeric type
+    # Non-numeric values will be replaced with NaN
+    df['rtt'] = pd.to_numeric(df['rtt'], errors='coerce')
+
+    latency_df = df[df['rtt'] > (threshold_ms / 1000)]
+    if not latency_df.empty:
+        logger.info(f"Found {len(latency_df)} queries with latency > {threshold_ms}ms:")
+        latency_df.to_csv('latency.csv')
+        #logger.info(latency_df[['ts', 'id.orig_h', 'query', 'rtt', 'rcode_name']])
+    else:
+        logger.info("No high-latency queries found.")
+
+def analyze_error_rates(df, error_threshold_percent=5):
+    """Detects high rates of SERVFAIL and NXDOMAIN errors."""
+    logger.info("--- 2. Error Rate Analysis ---")
+    total_queries = len(df)
+    if total_queries == 0:
+        logger.info("No queries to analyze.")
+        return
+
+    # SERVFAIL errors
+    df[df['rcode_name'] == 'SERVFAIL'].to_csv('servfail.csv')
+    servfail_count = df[df['rcode_name'] == 'SERVFAIL'].shape[0]
+    servfail_rate = (servfail_count / total_queries) * 100
+    if servfail_rate > error_threshold_percent:
+        logger.info(f"High SERVFAIL rate: {servfail_rate:.2f}% ({servfail_count} of {total_queries} queries).")
+        logger.info("Possible issues: server misconfiguration, upstream problems.")
+    else:
+        logger.info(f"SERVFAIL rate is normal: {servfail_rate:.2f}%")
+
+    # NXDOMAIN errors
+    df[df['rcode_name'] == 'NXDOMAIN'].to_csv('nxdomain.csv')
+    nxdomain_count = df[df['rcode_name'] == 'NXDOMAIN'].shape[0]
+    nxdomain_rate = (nxdomain_count / total_queries) * 100
+    if nxdomain_rate > error_threshold_percent:
+        logger.info(f"High NXDOMAIN rate: {nxdomain_rate:.2f}% ({nxdomain_count} of {total_queries} queries).")
+        logger.info("Possible issues: client misconfiguration, application bugs.")
+    else:
+        logger.info(f"NXDOMAIN rate is normal: {nxdomain_rate:.2f}%")
+
+def find_unanswered_queries(df):
+    """Identifies queries that do not have a corresponding response."""
+    logger.info("--- 3. Unanswered Queries ---")
+    # Zeek's dns.log marks responses with non-zero rtt
+    unanswered_queries = df[(df['rtt'].isna()) & (df['rcode_name'] == '-')]
+    if not unanswered_queries.empty:
+        logger.info(f"Found {len(unanswered_queries)} unanswered queries:")
+        #print(unanswered_queries[['ts', 'id.orig_h', 'query', 'rcode_name']])
+        unanswered_queries.to_csv('unanswered_queries.csv')
+    else:
+        logger.info("No unanswered queries found.")
+
+def analyze_ttl_consistency(df):
+    """Checks for inconsistencies in TTLs for the same domain."""
+    logger.info("--- 4. TTL Consistency Analysis ---")
+    # Filter for successful, cached responses
+    responses = df[(df['rcode_name'] == 'NOERROR') & (df['TTLs'] != '-')]
+    if responses.empty:
+        logger.info("No successful responses with TTLs found for analysis.")
+        return
+    
+    # Assuming `responses` is a slice from a previous operation (e.g., filtering `df`)
+    responses = responses.copy()
+
+    # Calculate variation in TTLs for the same query
+    #responses['ttls_list'] = responses['TTLs'].str.split(',')
+    responses.loc[:, 'ttls_list'] = responses['TTLs'].str.split(',')
+
+    #responses['first_ttl'] = responses['ttls_list'].str[0].astype(float)
+    responses.loc[:, 'first_ttl'] = responses['ttls_list'].str[0].astype(float)
+
+    
+    ttl_variations = responses.groupby('query', 'qtype')['first_ttl'].agg(['min', 'max', 'count'])
+    ttl_variations = ttl_variations[ttl_variations['count'] > 1]
+    ttl_variations['diff'] = ttl_variations['max'] - ttl_variations['min']
+    
+    inconsistent_ttls = ttl_variations[ttl_variations['diff'] > 0]
+    
+    if not inconsistent_ttls.empty:
+        logger.info("Found inconsistent TTL values for the following domains:")
+        inconsistent_ttls.to_csv('inconsistent_ttls.csv')
+        #logger.info(inconsistent_ttls)
+        logger.info("Investigation may be needed for caching issues or CDN misconfigurations.")
+    else:
+        logger.info("No TTL inconsistencies detected.")
+
+
+
+
+
+
+
+
+
+
 
 def main():
     """
     Main function to run the PCAP processor
     """
     # Configuration
-    SOURCE_DIRECTORY = os.getcwd() #"/root/my-fastapi-rocket-boilerplate/cli/data"  # Change this to your pcap directory
-    
+    SOURCE_DIRECTORY = os.getcwd()  # Change this to your pcap directory
+
     # Create source directory if it doesn't exist (for testing)
     os.makedirs(SOURCE_DIRECTORY, exist_ok=True)
     
@@ -388,10 +611,15 @@ def main():
     
     try:
         result = processor.process_all()
+        #print(type(processor.dns_payload))
+        analyze_latency(processor.dns_payload, 2000)
+        analyze_error_rates(processor.dns_payload)
+        find_unanswered_queries(processor.dns_payload)
+        analyze_ttl_consistency(processor.dns_payload)
         print("\n" + "="*50)
         print("PROCESSING COMPLETE")
         print("="*50)
-        print(f"Result: {result}")
+        #print(f"Result: {result}")
         
     except KeyboardInterrupt:
         logger.info("Processing interrupted by user")
