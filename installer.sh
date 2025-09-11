@@ -11,6 +11,8 @@ PYTHON_SCRIPT_NAME="pcap_sweeper.py"
 DOCKER_IMAGE="zeek/zeek:latest"
 INSTALL_DIR="$HOME/.local/bin"
 SCRIPT_DIR="$HOME/.local/share/$SCRIPT_NAME"
+VENV_DIR="$SCRIPT_DIR/venv"
+PYTHON_REQUIREMENTS="pandas"
 
 # Colors for output
 RED='\033[0;31m'
@@ -68,6 +70,20 @@ check_requirements() {
         missing_requirements+=("python3 (version 3.6 or higher)")
     fi
     
+    # Check Python venv module
+    if command_exists python3; then
+        if ! python3 -m venv --help >/dev/null 2>&1; then
+            missing_requirements+=("python3-venv (virtual environment support)")
+        fi
+    fi
+    
+    # Check pip availability
+    if command_exists python3; then
+        if ! python3 -m pip --version >/dev/null 2>&1; then
+            missing_requirements+=("python3-pip")
+        fi
+    fi
+    
     # Check Docker
     if ! command_exists docker; then
         missing_requirements+=("docker")
@@ -94,13 +110,19 @@ check_requirements() {
         echo ""
         echo "Installation commands (Ubuntu/Debian):"
         echo "  sudo apt update"
-        echo "  sudo apt install python3 python3-pip docker.io git"
+        echo "  sudo apt install python3 python3-pip python3-venv docker.io git"
         echo "  sudo systemctl start docker"
         echo "  sudo systemctl enable docker"
         echo "  sudo usermod -aG docker \$USER"
         echo ""
         echo "Installation commands (CentOS/RHEL/Fedora):"
-        echo "  sudo dnf install python3 python3-pip docker git"  # or yum for older versions
+        echo "  sudo dnf install python3 python3-pip python3-venv docker git"  # or yum for older versions
+        echo "  sudo systemctl start docker"
+        echo "  sudo systemctl enable docker"
+        echo "  sudo usermod -aG docker \$USER"
+        echo ""
+        echo "Installation commands (Arch Linux):"
+        echo "  sudo pacman -S python python-pip docker git"
         echo "  sudo systemctl start docker"
         echo "  sudo systemctl enable docker"
         echo "  sudo usermod -aG docker \$USER"
@@ -110,7 +132,42 @@ check_requirements() {
     log_success "All requirements met!"
 }
 
-# Function to create the Python script
+# Function to create virtual environment and install dependencies
+create_virtual_environment() {
+    log_info "Creating Python virtual environment..."
+    
+    # Remove existing venv if it exists
+    if [ -d "$VENV_DIR" ]; then
+        log_info "Removing existing virtual environment..."
+        rm -rf "$VENV_DIR"
+    fi
+    
+    # Create new virtual environment
+    if python3 -m venv "$VENV_DIR"; then
+        log_success "Virtual environment created at $VENV_DIR"
+    else
+        log_error "Failed to create virtual environment"
+        exit 1
+    fi
+    
+    # Activate virtual environment and install dependencies
+    log_info "Installing Python dependencies..."
+    
+    # Create a temporary requirements file
+    local requirements_file="$SCRIPT_DIR/requirements.txt"
+    echo "$PYTHON_REQUIREMENTS" > "$requirements_file"
+    
+    # Install dependencies in virtual environment
+    if "$VENV_DIR/bin/python" -m pip install --upgrade pip && \
+       "$VENV_DIR/bin/python" -m pip install -r "$requirements_file"; then
+        log_success "Python dependencies installed successfully"
+        rm -f "$requirements_file"
+    else
+        log_error "Failed to install Python dependencies"
+        rm -f "$requirements_file"
+        exit 1
+    fi
+}
 create_python_script() {
     log_info "Creating Python script..."
     
@@ -150,7 +207,7 @@ class PcapProcessor:
     def __init__(self, source_directory: str):
         """
         Initialize the PCAP processor
-        
+
         Args:
             source_directory (str): Directory containing pcap files
         """
@@ -162,73 +219,73 @@ class PcapProcessor:
     def scan_directory_for_pcaps(self) -> List[str]:
         """
         Scan directory for pcap files and create a list
-        
+
         Returns:
             List[str]: List of pcap file paths
         """
         logger.info(f"Scanning directory: {self.source_directory}")
-        
+
         # Common pcap file extensions
         pcap_extensions = ['*.pcap', '*.pcapng', '*.cap']
-        
+
         for extension in pcap_extensions:
             pattern = self.source_directory / extension
             files = glob.glob(str(pattern))
             self.pcap_files.extend(files)
-        
+
         logger.info(f"Found {len(self.pcap_files)} pcap files")
         for pcap_file in self.pcap_files:
             logger.info(f"  - {pcap_file}")
-            
+
         return self.pcap_files
-    
+
     def organize_pcap_files(self) -> List[Tuple[str, str]]:
         """
         Create directories for each pcap file and move them
-        
+
         Returns:
             List[Tuple[str, str]]: List of (directory_path, pcap_file_path) tuples
         """
         logger.info("Organizing pcap files into directories")
-        
+
         for pcap_file in self.pcap_files:
             pcap_path = Path(pcap_file)
-            
+
             # Create directory name (filename without extension)
             dir_name = pcap_path.stem
             target_dir = self.source_directory / dir_name
-            
+
             try:
                 # Create directory if it doesn't exist
                 target_dir.mkdir(exist_ok=True)
-                
+
                 # Move pcap file to the new directory
                 new_pcap_path = target_dir / pcap_path.name
                 shutil.move(str(pcap_path), str(new_pcap_path))
-                
+
                 # Update the list with new paths
                 self.pcap_directories.append((str(target_dir), str(new_pcap_path)))
-                
+
                 logger.info(f"Moved {pcap_file} to {target_dir}")
-                
+
             except Exception as e:
                 logger.error(f"Error organizing {pcap_file}: {e}")
-                
+
         return self.pcap_directories
-    
+
     def run_zeek_analysis(self, directory_path: str, pcap_file_path: str) -> bool:
         """
         Run Zeek analysis on pcap file using Docker
-        
+
         Args:
             directory_path (str): Directory containing the pcap file
             pcap_file_path (str): Path to the pcap file
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
         logger.info(f"Running Zeek analysis on {pcap_file_path}")
-        
+
         try:
             # Docker command to run Zeek
             # Mount the directory and run zeek on the pcap file
@@ -240,7 +297,7 @@ class PcapProcessor:
                 'zeek', '-r', f'/data/{Path(pcap_file_path).name}',
                 '-C'  # Run in foreground
             ]
-            
+
             # Change to the target directory for output
             result = subprocess.run(
                 docker_cmd,
@@ -249,7 +306,7 @@ class PcapProcessor:
                 text=True,
                 timeout=300  # 5 minute timeout
             )
-            
+
             if result.returncode == 0:
                 logger.info(f"Zeek analysis completed successfully for {pcap_file_path}")
                 return True
@@ -257,29 +314,29 @@ class PcapProcessor:
                 logger.error(f"Zeek analysis failed for {pcap_file_path}")
                 logger.error(f"Error: {result.stderr}")
                 return False
-                
+
         except subprocess.TimeoutExpired:
             logger.error(f"Zeek analysis timed out for {pcap_file_path}")
             return False
         except Exception as e:
             logger.error(f"Error running Zeek analysis on {pcap_file_path}: {e}")
             return False
-    
+
     def analyze_pcap_directory(self, directory_path: str) -> dict:
         """
         Analysis function for pcap directory with DNS analysis
-        
+
         Args:
             directory_path (str): Directory containing pcap and zeek logs
-            
+
         Returns:
             dict: Analysis results including DNS statistics
         """
         logger.info(f"Running analysis on directory: {directory_path}")
-        
+
         directory = Path(directory_path)
         dns_log_path = directory / 'dns.log'
-        
+
         dns_stats = {
             'total_queries': 0,
             'unique_domains': set(),
@@ -287,7 +344,7 @@ class PcapProcessor:
             'response_codes': {},
             'suspicious_domains': []
         }
-        
+
         # Analyze DNS log if it exists
         if dns_log_path.exists():
             logger.info(f"Analyzing DNS log: {dns_log_path}")
@@ -308,40 +365,40 @@ class PcapProcessor:
                     for line in f:
                         if line.startswith('#') or not line.strip():
                             continue
-                        
+
                         parts = line.strip().split('\t')
                         if len(parts) >= 9:
                             dns_stats['total_queries'] += 1
-                            
+
                             # Extract domain (query field)
                             domain = parts[9] if len(parts) > 9 else ''
-                            
+
                             if domain:
                                 dns_stats['unique_domains'].add(domain)
-                                
+
                                 # Check for suspicious patterns
-                                if any(pattern in domain.lower() for pattern in 
+                                if any(pattern in domain.lower() for pattern in
                                       ['malware', 'phish', 'bot', 'dga', 'suspicious']):
                                     dns_stats['suspicious_domains'].append(domain)
-                            
+
                             # Query type
                             qtype = parts[13] if len(parts) > 13 else 'unknown'
                             dns_stats['query_types'][qtype] = dns_stats['query_types'].get(qtype, 0) + 1
-                            
+
                             # Response code
                             rcode = parts[15] if len(parts) > 15 else 'unknown'
                             dns_stats['response_codes'][rcode] = dns_stats['response_codes'].get(rcode, 0) + 1
-                            
+
             except Exception as e:
                 logger.error(f"Error analyzing DNS log {dns_log_path}: {e}")
-        
+
         # Convert set to count for serialization
         dns_stats['unique_domains_count'] = len(dns_stats['unique_domains'])
         dns_stats['unique_domains'] = list(dns_stats['unique_domains'])[:50]  # Limit for report
-        
+
         files = list(directory.glob('*'))
         log_files = list(directory.glob('*.log'))
-        
+
         analysis_results = {
             'directory': directory_path,
             'total_files': len(files),
@@ -350,44 +407,44 @@ class PcapProcessor:
             'analysis_status': 'completed',
             'timestamp': directory.stat().st_mtime if directory.exists() else None
         }
-        
+
         logger.info(f"DNS Analysis - Queries: {dns_stats['total_queries']}, Domains: {dns_stats['unique_domains_count']}")
         #print(type(df))
         return analysis_results
-    
+
     def generate_report(self, all_analysis_results: List[dict]) -> dict:
         """
         Generate comprehensive report with DNS analysis
-        
+
         Args:
             all_analysis_results (List[dict]): Results from all analyses
-            
+
         Returns:
             dict: Generated report with DNS statistics
         """
         logger.info("Generating final report")
-        
+
         total_directories = len(all_analysis_results)
         successful_analyses = len([r for r in all_analysis_results if r.get('analysis_status') == 'completed'])
-        
+
         # Aggregate DNS statistics
         total_dns_queries = sum(r.get('dns_analysis', {}).get('total_queries', 0) for r in all_analysis_results)
         all_domains = set()
         all_suspicious = []
         query_types_agg = {}
         response_codes_agg = {}
-        
+
         for result in all_analysis_results:
             dns_data = result.get('dns_analysis', {})
             all_domains.update(dns_data.get('unique_domains', []))
             all_suspicious.extend(dns_data.get('suspicious_domains', []))
-            
+
             for qtype, count in dns_data.get('query_types', {}).items():
                 query_types_agg[qtype] = query_types_agg.get(qtype, 0) + count
-            
+
             for rcode, count in dns_data.get('response_codes', {}).items():
                 response_codes_agg[rcode] = response_codes_agg.get(rcode, 0) + count
-        
+
         report = {
             'total_pcap_files_processed': total_directories,
             'successful_analyses': successful_analyses,
@@ -402,7 +459,7 @@ class PcapProcessor:
             'report_timestamp': Path.cwd().stat().st_mtime,
             'detailed_results': all_analysis_results
         }
-        
+
         # Save enhanced report
         report_file = self.source_directory / 'dns_analysis_report.txt'
         with open(report_file, 'w') as f:
@@ -419,49 +476,49 @@ class PcapProcessor:
             f.write("\nSuspicious Domains Found:\n")
             for domain in set(all_suspicious):
                 f.write(f"  - {domain}\n")
-        
+
         logger.info(f"Enhanced DNS report saved to: {report_file}")
         return report
-    
+
     def process_all(self) -> dict:
         """
         Main processing function that orchestrates the entire workflow
-        
+
         Returns:
             dict: Final processing report
         """
         logger.info("Starting PCAP processing workflow")
-        
+
         try:
             # Step 1: Scan for pcap files
             self.scan_directory_for_pcaps()
-            
+
             if not self.pcap_files:
                 logger.warning("No pcap files found in directory")
                 return {'status': 'no_files_found'}
-            
+
             # Step 2: Organize pcap files into directories
             self.organize_pcap_files()
-            
+
             # Step 3: Run Zeek analysis on each pcap
             zeek_results = []
             for directory_path, pcap_file_path in self.pcap_directories:
                 success = self.run_zeek_analysis(directory_path, pcap_file_path)
                 zeek_results.append((directory_path, success))
-            
+
             # Step 4: Run analysis function on each directory
             analysis_results = []
             for directory_path, zeek_success in zeek_results:
                 result = self.analyze_pcap_directory(directory_path)
                 result['zeek_success'] = zeek_success
                 analysis_results.append(result)
-            
+
             # Step 5: Generate final report
             final_report = self.generate_report(analysis_results)
-            
+
             logger.info("PCAP processing workflow completed successfully")
             return final_report
-            
+
         except Exception as e:
             logger.error(f"Error in processing workflow: {e}")
             return {'status': 'error', 'message': str(e)}
@@ -470,7 +527,7 @@ class PcapProcessor:
         """Detects queries with high latency."""
         #print("--- 1. Latency Analysis ---")
         #print(type(df))
-        
+
         # Safely convert the 'rtt' column to a numeric type
         # Non-numeric values will be replaced with NaN
         df['rtt'] = pd.to_numeric(df['rtt'], errors='coerce')
@@ -499,7 +556,7 @@ def analyze_latency(df, threshold_ms=200):
     """Detects queries with high latency."""
     logger.info("--- 1. Latency Analysis ---")
     #print(type(df))
-    
+
     # Safely convert the 'rtt' column to a numeric type
     # Non-numeric values will be replaced with NaN
     df['rtt'] = pd.to_numeric(df['rtt'], errors='coerce')
@@ -551,7 +608,6 @@ def find_unanswered_queries(df):
         unanswered_queries.to_csv('unanswered_queries.csv')
     else:
         logger.info("No unanswered queries found.")
-
 def analyze_ttl_consistency(df):
     """Checks for inconsistencies in TTLs for the same domain."""
     logger.info("--- 4. TTL Consistency Analysis ---")
@@ -560,7 +616,7 @@ def analyze_ttl_consistency(df):
     if responses.empty:
         logger.info("No successful responses with TTLs found for analysis.")
         return
-    
+
     # Assuming `responses` is a slice from a previous operation (e.g., filtering `df`)
     responses = responses.copy()
 
@@ -571,13 +627,13 @@ def analyze_ttl_consistency(df):
     #responses['first_ttl'] = responses['ttls_list'].str[0].astype(float)
     responses.loc[:, 'first_ttl'] = responses['ttls_list'].str[0].astype(float)
 
-    
+
     ttl_variations = responses.groupby('query', 'qtype')['first_ttl'].agg(['min', 'max', 'count'])
     ttl_variations = ttl_variations[ttl_variations['count'] > 1]
     ttl_variations['diff'] = ttl_variations['max'] - ttl_variations['min']
-    
+
     inconsistent_ttls = ttl_variations[ttl_variations['diff'] > 0]
-    
+
     if not inconsistent_ttls.empty:
         logger.info("Found inconsistent TTL values for the following domains:")
         inconsistent_ttls.to_csv('inconsistent_ttls.csv')
@@ -585,13 +641,6 @@ def analyze_ttl_consistency(df):
         logger.info("Investigation may be needed for caching issues or CDN misconfigurations.")
     else:
         logger.info("No TTL inconsistencies detected.")
-
-
-
-
-
-
-
 
 
 
@@ -605,10 +654,10 @@ def main():
 
     # Create source directory if it doesn't exist (for testing)
     os.makedirs(SOURCE_DIRECTORY, exist_ok=True)
-    
+
     # Initialize and run processor
     processor = PcapProcessor(SOURCE_DIRECTORY)
-    
+
     try:
         result = processor.process_all()
         #print(type(processor.dns_payload))
@@ -620,7 +669,7 @@ def main():
         print("PROCESSING COMPLETE")
         print("="*50)
         #print(f"Result: {result}")
-        
+
     except KeyboardInterrupt:
         logger.info("Processing interrupted by user")
     except Exception as e:
@@ -629,6 +678,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
 EOF
 
     chmod +x "$SCRIPT_DIR/$PYTHON_SCRIPT_NAME"
@@ -642,7 +695,21 @@ create_wrapper_script() {
     cat > "$INSTALL_DIR/$SCRIPT_NAME" << EOF
 #!/bin/bash
 # Wrapper script for $SCRIPT_NAME
-exec python3 "$SCRIPT_DIR/$PYTHON_SCRIPT_NAME" "\$@"
+# This script uses the virtual environment to ensure dependencies are available
+
+# Path to the virtual environment python
+VENV_PYTHON="$VENV_DIR/bin/python"
+
+# Check if virtual environment exists
+if [ ! -f "\$VENV_PYTHON" ]; then
+    echo "Error: Virtual environment not found at $VENV_DIR"
+    echo "Please run the setup script again to reinstall."
+    exit 1
+fi
+source "$VENV_DIR/bin/activate"
+
+# Execute the Python script with the virtual environment
+exec "\$VENV_PYTHON" "$SCRIPT_DIR/$PYTHON_SCRIPT_NAME" "\$@"
 EOF
 
     chmod +x "$INSTALL_DIR/$SCRIPT_NAME"
@@ -727,6 +794,23 @@ run_tests() {
         return 1
     fi
     
+    # Test virtual environment
+    if [ -f "$VENV_DIR/bin/python" ]; then
+        log_success "Virtual environment is available"
+        
+        # Test pandas installation in venv
+        if "$VENV_DIR/bin/python" -c "import pandas; print(f'Pandas version: {pandas.__version__}')" 2>/dev/null; then
+            local pandas_version=$("$VENV_DIR/bin/python" -c "import pandas; print(pandas.__version__)")
+            log_success "Pandas is installed (version: $pandas_version)"
+        else
+            log_error "Pandas is not available in virtual environment"
+            return 1
+        fi
+    else
+        log_error "Virtual environment not found"
+        return 1
+    fi
+    
     # Test Docker image
     if docker images | grep -q "zeek/zeek"; then
         log_success "Docker image is available"
@@ -737,7 +821,6 @@ run_tests() {
     log_success "Basic tests completed"
 }
 
- 
 # Main installation function
 main() {
     echo "======================================"
@@ -750,6 +833,9 @@ main() {
     
     # Create directories
     create_directories
+    
+    # Create virtual environment and install dependencies
+    create_virtual_environment
     
     # Create Python script
     create_python_script
@@ -772,9 +858,15 @@ main() {
     echo "======================================"
     echo ""
     echo "Usage:"
-    echo "  $SCRIPT_NAME                                # Basic analysis"
-    echo "  This will process all pcaps in the current directory"
+    echo "enter the directory containing the pcap files and run:"
+    echo "  $SCRIPT_NAME                     # Basic analysis"
+    #echo "  $SCRIPT_NAME -- <zeek_args>      # With additional Zeek arguments"
     echo ""
+    #echo "Examples:"
+    #echo "  $SCRIPT_NAME sample.pcap"
+    #echo "  $SCRIPT_NAME sample.pcap -- --help"
+    #echo "  $SCRIPT_NAME sample.pcap -- -v -C"
+    #echo ""
     echo "Note: If the command is not found, restart your shell or run:"
     echo "  source ~/.bashrc  (for bash)"
     echo "  source ~/.zshrc   (for zsh)"
@@ -782,6 +874,7 @@ main() {
     echo "Or run directly with:"
     echo "  $INSTALL_DIR/$SCRIPT_NAME"
 }
+
 
 # Run main function
 main "$@"
