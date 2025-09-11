@@ -198,10 +198,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Set options to display all rows and columns
-#pd.set_option('display.max_rows', None)
-#pd.set_option('display.max_columns', None)
-
 
 class PcapProcessor:
     def __init__(self, source_directory: str):
@@ -225,7 +221,7 @@ class PcapProcessor:
         """
         logger.info(f"Scanning directory: {self.source_directory}")
 
-        # Common pcap file extensions
+        # pcap file extensions
         pcap_extensions = ['*.pcap', '*.pcapng', '*.cap']
 
         for extension in pcap_extensions:
@@ -360,7 +356,7 @@ class PcapProcessor:
 
                 df.columns = df_header
                 self.dns_payload = df
-                #print(type(df))
+
                 with open(dns_log_path, 'r') as f:
                     for line in f:
                         if line.startswith('#') or not line.strip():
@@ -409,7 +405,6 @@ class PcapProcessor:
         }
 
         logger.info(f"DNS Analysis - Queries: {dns_stats['total_queries']}, Domains: {dns_stats['unique_domains_count']}")
-        #print(type(df))
         return analysis_results
 
     def generate_report(self, all_analysis_results: List[dict]) -> dict:
@@ -513,6 +508,14 @@ class PcapProcessor:
                 result['zeek_success'] = zeek_success
                 analysis_results.append(result)
 
+                # Run detailed analyses & CSV dumps for this pcap
+                if self.dns_payload is not None and not self.dns_payload.empty:
+                    out_dir = Path(directory_path)
+                    analyze_latency(self.dns_payload, out_dir, 2000)
+                    analyze_error_rates(self.dns_payload, out_dir)
+                    find_unanswered_queries(self.dns_payload, out_dir)
+
+
             # Step 5: Generate final report
             final_report = self.generate_report(analysis_results)
 
@@ -523,40 +526,13 @@ class PcapProcessor:
             logger.error(f"Error in processing workflow: {e}")
             return {'status': 'error', 'message': str(e)}
 
-    def analyze_latency(df, threshold_ms=3000):
-        """Detects queries with high latency."""
-        #print("--- 1. Latency Analysis ---")
-        #print(type(df))
-
-        # Safely convert the 'rtt' column to a numeric type
-        # Non-numeric values will be replaced with NaN
-        df['rtt'] = pd.to_numeric(df['rtt'], errors='coerce')
-
-        latency_df = df[df['rtt'] > (threshold_ms / 1000)]
-        if not latency_df.empty:
-            latency_df.to_csv('latency.csv')
-            #logger.info(f"Found {len(latency_df)} queries with latency > {threshold_ms}ms:")
-            #logger.info(latency_df[['ts', 'id.orig_h', 'query', 'rtt', 'rcode_name']])
-        else:
-            logger.info("No high-latency queries found.")
-        logger.info("\n")
 
 
 
 
-
-
-
-
-
-
-
-
-def analyze_latency(df, threshold_ms=200):
+def analyze_latency(df, out_dir: Path, threshold_ms=200):
     """Detects queries with high latency."""
     logger.info("--- 1. Latency Analysis ---")
-    #print(type(df))
-
     # Safely convert the 'rtt' column to a numeric type
     # Non-numeric values will be replaced with NaN
     df['rtt'] = pd.to_numeric(df['rtt'], errors='coerce')
@@ -564,12 +540,12 @@ def analyze_latency(df, threshold_ms=200):
     latency_df = df[df['rtt'] > (threshold_ms / 1000)]
     if not latency_df.empty:
         logger.info(f"Found {len(latency_df)} queries with latency > {threshold_ms}ms:")
-        latency_df.to_csv('latency.csv')
+        latency_df.to_csv(out_dir / 'latency.csv')
         #logger.info(latency_df[['ts', 'id.orig_h', 'query', 'rtt', 'rcode_name']])
     else:
         logger.info("No high-latency queries found.")
 
-def analyze_error_rates(df, error_threshold_percent=5):
+def analyze_error_rates(df,  out_dir: Path, error_threshold_percent=5):
     """Detects high rates of SERVFAIL and NXDOMAIN errors."""
     logger.info("--- 2. Error Rate Analysis ---")
     total_queries = len(df)
@@ -578,7 +554,7 @@ def analyze_error_rates(df, error_threshold_percent=5):
         return
 
     # SERVFAIL errors
-    df[df['rcode_name'] == 'SERVFAIL'].to_csv('servfail.csv')
+    df[df['rcode_name'] == 'SERVFAIL'].to_csv(out_dir / 'servfail.csv')
     servfail_count = df[df['rcode_name'] == 'SERVFAIL'].shape[0]
     servfail_rate = (servfail_count / total_queries) * 100
     if servfail_rate > error_threshold_percent:
@@ -588,7 +564,7 @@ def analyze_error_rates(df, error_threshold_percent=5):
         logger.info(f"SERVFAIL rate is normal: {servfail_rate:.2f}%")
 
     # NXDOMAIN errors
-    df[df['rcode_name'] == 'NXDOMAIN'].to_csv('nxdomain.csv')
+    df[df['rcode_name'] == 'NXDOMAIN'].to_csv(out_dir / 'nxdomain.csv')
     nxdomain_count = df[df['rcode_name'] == 'NXDOMAIN'].shape[0]
     nxdomain_rate = (nxdomain_count / total_queries) * 100
     if nxdomain_rate > error_threshold_percent:
@@ -597,18 +573,18 @@ def analyze_error_rates(df, error_threshold_percent=5):
     else:
         logger.info(f"NXDOMAIN rate is normal: {nxdomain_rate:.2f}%")
 
-def find_unanswered_queries(df):
+def find_unanswered_queries(df, out_dir: Path):
     """Identifies queries that do not have a corresponding response."""
     logger.info("--- 3. Unanswered Queries ---")
     # Zeek's dns.log marks responses with non-zero rtt
     unanswered_queries = df[(df['rtt'].isna()) & (df['rcode_name'] == '-')]
     if not unanswered_queries.empty:
         logger.info(f"Found {len(unanswered_queries)} unanswered queries:")
-        #print(unanswered_queries[['ts', 'id.orig_h', 'query', 'rcode_name']])
-        unanswered_queries.to_csv('unanswered_queries.csv')
+        unanswered_queries.to_csv(out_dir / 'unanswered_queries.csv')
     else:
         logger.info("No unanswered queries found.")
-def analyze_ttl_consistency(df):
+
+def analyze_ttl_consistency(df, out_dir: Path):
     """Checks for inconsistencies in TTLs for the same domain."""
     logger.info("--- 4. TTL Consistency Analysis ---")
     # Filter for successful, cached responses
@@ -621,10 +597,8 @@ def analyze_ttl_consistency(df):
     responses = responses.copy()
 
     # Calculate variation in TTLs for the same query
-    #responses['ttls_list'] = responses['TTLs'].str.split(',')
     responses.loc[:, 'ttls_list'] = responses['TTLs'].str.split(',')
 
-    #responses['first_ttl'] = responses['ttls_list'].str[0].astype(float)
     responses.loc[:, 'first_ttl'] = responses['ttls_list'].str[0].astype(float)
 
 
@@ -636,7 +610,7 @@ def analyze_ttl_consistency(df):
 
     if not inconsistent_ttls.empty:
         logger.info("Found inconsistent TTL values for the following domains:")
-        inconsistent_ttls.to_csv('inconsistent_ttls.csv')
+        inconsistent_ttls.to_csv(out_dir /'inconsistent_ttls.csv')
         #logger.info(inconsistent_ttls)
         logger.info("Investigation may be needed for caching issues or CDN misconfigurations.")
     else:
@@ -660,15 +634,10 @@ def main():
 
     try:
         result = processor.process_all()
-        #print(type(processor.dns_payload))
-        analyze_latency(processor.dns_payload, 2000)
-        analyze_error_rates(processor.dns_payload)
-        find_unanswered_queries(processor.dns_payload)
-        analyze_ttl_consistency(processor.dns_payload)
+
         print("\n" + "="*50)
         print("PROCESSING COMPLETE")
         print("="*50)
-        #print(f"Result: {result}")
 
     except KeyboardInterrupt:
         logger.info("Processing interrupted by user")
@@ -678,10 +647,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
 EOF
 
     chmod +x "$SCRIPT_DIR/$PYTHON_SCRIPT_NAME"
