@@ -62,6 +62,8 @@ pcap-analyzer
 The setup script will automatically check for these requirements:
 
 - **Python 3.6+** - For running the wrapper script
+- **python3-venv** - For creating isolated Python environments
+- **python3-pip** - For installing Python packages
 - **Docker** - For running Zeek in containers
 - **Git** (optional) - For cloning repositories
 
@@ -72,7 +74,7 @@ If requirements are missing, the script will provide installation commands for y
 **Ubuntu/Debian:**
 ```bash
 sudo apt update
-sudo apt install python3 python3-pip docker.io git
+sudo apt install python3 python3-pip python3-venv docker.io git
 sudo systemctl start docker
 sudo systemctl enable docker
 sudo usermod -aG docker $USER
@@ -80,7 +82,17 @@ sudo usermod -aG docker $USER
 
 **CentOS/RHEL/Fedora:**
 ```bash
-sudo dnf install python3 python3-pip docker git
+sudo dnf install python3 python3-pip python3-venv docker git
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker $USER
+```
+
+http://192.168.1.11:6875/link/211#bkmrk-%2A%2Aarch-linux%3A%2A%2A%60%60%60ba
+ 
+**Arch Linux:**
+```bash
+sudo pacman -S python python-pip docker git
 sudo systemctl start docker
 sudo systemctl enable docker
 sudo usermod -aG docker $USER
@@ -89,6 +101,6 @@ sudo usermod -aG docker $USER
 # Uninstall / reove the script
 
 TODO - bellow is the list of files and modification performed by the installer, so remove manually for now
-* Bash shell wrapper file is deployed in ~/.local/bin/pcap-analyzer
-* Python script ~/.local/share/pcap-analyzer/pcap-analyzer.py
-* Python virtual environment ~/.local/share/pcap-analyzer/venv
+* Bash shell wrapper file is deployed in ~/.local/bin/pcap-sweeper
+* Python script ~/.local/share/pcap-sweeper/pcap-sweeper.py
+* Python virtual environment ~/.local/share/pcap-sweeper/venv
