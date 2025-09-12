@@ -51,7 +51,7 @@ source ~/.zshrc
 
 Run the following command in the directory where you have stored pcaps for porcessing/analysis:
 ```bash
-pcap-analyzer
+pcap-sweeper
 ```
 
 ## Requirements
