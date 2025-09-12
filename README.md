@@ -94,7 +94,7 @@ sudo systemctl enable docker
 sudo usermod -aG docker $USER
 ```
 
-# Uninstall / reove the script
+# Uninstall / remove the script
 
 TODO - bellow is the list of files and modification performed by the installer, so remove manually for now
 * Bash shell wrapper file is deployed in ~/.local/bin/pcap-sweeper
