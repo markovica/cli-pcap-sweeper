@@ -85,8 +85,7 @@ sudo systemctl enable docker
 sudo usermod -aG docker $USER
 ```
 
-http://192.168.1.11:6875/link/211#bkmrk-%2A%2Aarch-linux%3A%2A%2A%60%60%60ba
- 
+
 **Arch Linux:**
 ```bash
 sudo pacman -S python python-pip docker git
